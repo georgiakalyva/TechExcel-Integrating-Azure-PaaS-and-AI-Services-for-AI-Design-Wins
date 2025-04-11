@@ -1,6 +1,8 @@
 import streamlit as st
 from azure.cosmos import CosmosClient
 import openai
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+
 
 st.set_page_config(layout="wide")
 
@@ -8,9 +10,25 @@ def make_azure_openai_embedding_request(text):
     """Create and return a new embedding request. Key assumptions:
     - Azure OpenAI endpoint, key, and deployment name stored in Streamlit secrets."""
 
-    return "This is a placeholder result. Fill in with real embedding."
+    token_provider = get_bearer_token_provider(
+        DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
+    )
+    aoai_endpoint = st.secrets["aoai"]["endpoint"]
+    aoai_embedding_deployment_name = st.secrets["aoai"]["embedding_deployment_name"]
 
-def make_cosmos_db_vector_search_request(query_embedding, max_results=5, minimum_similarity_score=0.5):
+    client = openai.AzureOpenAI(
+        azure_ad_token_provider=token_provider,
+        api_version="2024-06-01",
+        azure_endpoint = aoai_endpoint
+    )
+    # Create and return a new embedding request
+    return client.embeddings.create(
+        model=aoai_embedding_deployment_name,
+        input=text
+    )
+
+
+def make_cosmos_db_vector_search_request(query_embedding, max_results=5,minimum_similarity_score=0.5):
     """Create and return a new vector search request. Key assumptions:
     - Query embedding is a list of floats based on a search string.
     - Cosmos DB endpoint, client_id, and database name stored in Streamlit secrets."""
@@ -23,10 +41,34 @@ def make_cosmos_db_vector_search_request(query_embedding, max_results=5, minimum
     cosmos_container_name = "CallTranscripts"
 
     # Create a CosmosClient
+    client = CosmosClient(url=cosmos_endpoint, credential=cosmos_credentials)
     # Load the Cosmos database and container
+    database = client.get_database_client(cosmos_database_name)
+    container = database.get_container_client(cosmos_container_name)
+
+    results = container.query_items(
+        query=f"""
+            SELECT TOP {max_results}
+                c.id,
+                c.call_id,
+                c.call_transcript,
+                c.abstractive_summary,
+                VectorDistance(c.request_vector, @request_vector) AS SimilarityScore
+            FROM c
+            WHERE
+                VectorDistance(c.request_vector, @request_vector) > {minimum_similarity_score}
+            ORDER BY
+                VectorDistance(c.request_vector, @request_vector)
+            """,
+        parameters=[
+            {"name": "@request_vector", "value": query_embedding}
+        ],
+        enable_cross_partition_query=True
+    )
 
     # Create and return a new vector search request
-    return "This is a stub result. Fill in with real search results."
+    return results
+
 
 
 def main():

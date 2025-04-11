@@ -22,6 +22,7 @@ def create_chat_completion(messages):
     search_endpoint = st.secrets["search"]["endpoint"]
     search_key = st.secrets["search"]["key"]
     search_index_name = st.secrets["search"]["index_name"]
+    
     aoai_endpoint = st.secrets["aoai"]["endpoint"]
     aoai_deployment_name = st.secrets["aoai"]["deployment_name"]
 
